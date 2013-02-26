@@ -428,7 +428,7 @@ void tegra_init_speedo_data(void)
 			break;
 		}
 	}
-	cpu_process_id = iv -1;
+	cpu_process_id = 2; //iv -1;
 
 	if (cpu_process_id == -1) {
 		pr_err("****************************************************");
@@ -532,7 +532,7 @@ int tegra_package_id(void)
  */
 static const int cpu_speedo_nominal_millivolts[] =
 /* speedo_id 0,    1,    2,    3,    4,    5,    6,    7,    8,   9,  10,  11,   12,    13,  14,  15 */
-	{ 1125, 1150, 1150, 1150, 1237, 1237, 1237, 1150, 1150, 1007, 916, 850, 1237, 1237, 950, 900};
+	{ 1125, 1150, 1150, 1300, 1300, 1237, 1237, 1150, 1150, 1007, 916, 850, 1237, 1237, 950, 900};
 
 int tegra_cpu_speedo_mv(void)
 {
@@ -550,9 +550,6 @@ int tegra_core_speedo_mv(void)
 			return 1200;
 		/* fall thru for T30L or T30SL */
 	case 2:
-		if (cpu_speedo_id != 13)
-			return 1300;
-		/* T37 */
 		return 1350;
 	case 3:
 		return 1250;

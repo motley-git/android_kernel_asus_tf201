@@ -680,6 +680,11 @@ void __init tegra_init_max_rate(struct clk *c, unsigned long max_rate)
 	if (c->max_rate <= max_rate)
 		return;
 
+	if(!strncmp(c->name,"cpu_g",strlen("cpu_g"))){
+			pr_warning("Keep max_rate of %s  as %lu \n",c->name, c->max_rate);
+			return;
+	}
+
 	pr_warning("Lowering %s maximum rate from %lu to %lu\n",
 		c->name, c->max_rate, max_rate);
 
