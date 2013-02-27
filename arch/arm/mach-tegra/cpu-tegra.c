@@ -48,21 +48,23 @@
 
 #include <linux/seq_file.h>
 
+/*
 #define SYSTEM_NORMAL_MODE	(0)
 #define SYSTEM_BALANCE_MODE	(1)
 #define SYSTEM_PWRSAVE_MODE	(2)
 #define SYSTEM_OVERCLOCK_MODE	(3)
 #define SYSTEM_MODE_END 		(SYSTEM_OVERCLOCK_MODE + 1)
 #define SYSTEM_PWRSAVE_MODE_MAX_FREQ	(1000000)
-unsigned int power_mode_table[SYSTEM_MODE_END] = {1400000,1300000,1000000, 1400000};
+unsigned int power_mode_table[SYSTEM_MODE_END] = {1500000,1300000,1000000, 1500000};
 #define ASUS_OVERCLOCK
+*/
 
 #define CAMERA_ENABLE_EMC_MINMIAM_RATE (667000000)
 #define EMC_MINMIAM_RATE (204000000)
 /* tegra throttling and edp governors require frequencies in the table
    to be in ascending order */
 static struct cpufreq_frequency_table *freq_table;
-static unsigned int freq_table_size=0;;
+
 static struct clk *cpu_clk;
 static struct clk *emc_clk;
 
@@ -71,10 +73,13 @@ static unsigned long target_cpu_speed[CONFIG_NR_CPUS];
 static DEFINE_MUTEX(tegra_cpu_lock);
 static bool is_suspended;
 static int suspend_index;
-static bool edp_enable = 1;
-static bool force_policy_max = 1;
- int  gps_enable=0;
 
+static bool force_policy_max = 1;
+
+#define TEGRA3_OVERCLOCK
+#define TEGRA3_DYNAMIC_EDP_THRES_TEMP (75)
+static bool edp_enable = 1;
+int  gps_enable=0;
 static bool camera_enable = 0;
 static unsigned long camera_enable_cpu_emc_mini_rate = 0;
 static unsigned long camera_enable_emc_mini_rate = 0;
@@ -121,7 +126,7 @@ int Asus_camera_enable_set_emc_rate(unsigned long rate)
 	cpu_emc_cur_rate = clk_get_rate(emc_clk);
 	emc_cur_rate = clk_get_rate(c);
 
-	printk("%s : camera enable emc_clk->min_rate to %d\n",
+	printk("%s : camera enable emc_clk->min_rate to %lu\n",
 		__func__, camera_emc_enable_mini_rete);
 	camera_enable_cpu_emc_mini_rate = emc_clk->min_rate;
 	emc_clk->min_rate = camera_emc_enable_mini_rete;
@@ -163,8 +168,8 @@ int Asus_camera_disable_set_emc_rate(void)
 	cpu_emc_cur_rate = clk_get_rate(emc_clk);
 	emc_cur_rate = clk_get_rate(c);
 
-	printk("%s : camera disable emc_clk->min_rate to %d\n", __func__, camera_enable_cpu_emc_mini_rate);
-	printk("%s : camera disable c->min_rate to %d\n", __func__, camera_enable_emc_mini_rate);
+	printk("%s : camera disable emc_clk->min_rate to %lu\n", __func__, camera_enable_cpu_emc_mini_rate);
+	printk("%s : camera disable c->min_rate to %lu\n", __func__, camera_enable_emc_mini_rate);
 	emc_clk->min_rate = camera_enable_cpu_emc_mini_rate;
 	c->min_rate = camera_enable_emc_mini_rate;
 
@@ -200,18 +205,18 @@ static int gps_state_set(const char *arg, const struct kernel_param *kp)
 					if(emc_clk){
 						unsigned long	cpu_emc_cur_rate=clk_get_rate(emc_clk);
 						unsigned long	emc_cur_rate=clk_get_rate(c);
-						printk("tf201_gps_enable enable  c_cpu_emc->min_rate=%u cur_rate=%u c->min_rate=%u %u\n",emc_clk->min_rate,cpu_emc_cur_rate,c->min_rate,emc_cur_rate);
+						printk("tf201_gps_enable enable  c_cpu_emc->min_rate=%lu cur_rate=%lu c->min_rate=%lu %lu\n",emc_clk->min_rate,cpu_emc_cur_rate,c->min_rate,emc_cur_rate);
 						emc_clk->min_rate=MINMIAM_RATE;
 						c->min_rate=MINMIAM_RATE;
 						if(cpu_emc_cur_rate < emc_clk->min_rate ){
 							clk_set_rate(emc_clk,MINMIAM_RATE);
-							printk("tf201_gps_enable enable emc_clk cur_rate=%u\n",clk_get_rate(emc_clk));
+							printk("tf201_gps_enable enable emc_clk cur_rate=%lu\n",clk_get_rate(emc_clk));
 						}
 						if(emc_cur_rate < c->min_rate ){
 							clk_set_rate(c,MINMIAM_RATE);
-							printk("tf201_gps_enable enable C cur_rate=%u\n",clk_get_rate(c));
+							printk("tf201_gps_enable enable C cur_rate=%lu\n",clk_get_rate(c));
 						}
-					}//tegra_update_cpu_speed(620000);
+					}
 				}else{
 					if(emc_clk)
 						emc_clk->min_rate=0;
@@ -260,101 +265,6 @@ static struct kernel_param_ops policy_ops = {
 };
 module_param_cb(force_policy_max, &policy_ops, &force_policy_max, 0644);
 
-static  int system_mode=0;
-
-static int system_mode_set(const char *arg, const struct kernel_param *kp)
-{
-	int ret;
-
-	ret = param_set_int(arg, kp);
-	if (ret == 0) {
-		printk("system_mode_set system_mode=%u\n",system_mode);
-#ifdef ASUS_OVERCLOCK
-		if( (system_mode<SYSTEM_NORMAL_MODE) || (system_mode>SYSTEM_OVERCLOCK_MODE))
-			system_mode=SYSTEM_NORMAL_MODE;
-#else
-
-		if((system_mode < SYSTEM_NORMAL_MODE) || (system_mode > SYSTEM_PWRSAVE_MODE))
-			system_mode = SYSTEM_NORMAL_MODE;
-#endif
-		tegra_cpu_set_speed_cap(NULL);
-	}
-
-	return ret;
-}
-
-static int system_mode_get(char *buffer, const struct kernel_param *kp)
-{
-	return param_get_int(buffer, kp);
-}
-
-static struct kernel_param_ops system_mode_ops = {
-	.set = system_mode_set,
-	.get = system_mode_get,
-};
-module_param_cb(system_mode, &system_mode_ops, &system_mode, 0644);
-
-
-static unsigned int pwr_save=0;
-static unsigned int pwr_save_freq=1000000;
-static int pwr_save_freq_set(const char *arg, const struct kernel_param *kp)
-{
-	int ret = 0;
-
-	ret = param_set_int(arg, kp);
-	if (ret == 0) {
-		printk("pwr_save_freq_set pwr_save=%u\n",pwr_save_freq);
-	}
-	return ret;
-}
-static int pwr_save_freq_get(char *buffer, const struct kernel_param *kp)
-{
-	return param_get_int(buffer, kp);
-}
-
-static struct kernel_param_ops tegra_pwr_save_freq_ops = {
-	.set = pwr_save_freq_set,
-	.get = pwr_save_freq_get,
-};
-module_param_cb( pwr_save_freq,&tegra_pwr_save_freq_ops, &pwr_save_freq, 0644);
-static int pwr_save_state_set(const char *arg, const struct kernel_param *kp)
-{
-	int ret = 0;
-
-	ret = param_set_int(arg, kp);
-
-	if (ret == 0) {
-		printk("pwr_save_state_set pwr_save=%u\n",pwr_save);
-	}
-	return ret;
-}
-static int pwr_save_state_get(char *buffer, const struct kernel_param *kp)
-{
-	return param_get_int(buffer, kp);
-}
-
-static struct kernel_param_ops tegra_pwr_save_ops = {
-	.set = pwr_save_state_set,
-	.get = pwr_save_state_get,
-};
-module_param_cb(enable_pwr_save, &tegra_pwr_save_ops, &pwr_save, 0644);
-
- unsigned int ASUS_governor_speed(unsigned int requested_speed)
-{
-	unsigned int new_speed=requested_speed;
-
-	if((system_mode == SYSTEM_BALANCE_MODE) && (requested_speed > power_mode_table[SYSTEM_BALANCE_MODE]))
-		new_speed = power_mode_table[SYSTEM_BALANCE_MODE];
-	else  if((system_mode == SYSTEM_PWRSAVE_MODE) && (requested_speed > power_mode_table[SYSTEM_PWRSAVE_MODE]))
-		new_speed = power_mode_table[SYSTEM_PWRSAVE_MODE];
-	else  if((system_mode == SYSTEM_NORMAL_MODE) && (requested_speed > power_mode_table[SYSTEM_NORMAL_MODE]))
-		new_speed = power_mode_table[SYSTEM_NORMAL_MODE];
-#ifdef ASUS_OVERCLOCK
-        else  if( (system_mode==SYSTEM_OVERCLOCK_MODE ) && ( requested_speed > power_mode_table[SYSTEM_OVERCLOCK_MODE] ))
-		new_speed=power_mode_table[SYSTEM_OVERCLOCK_MODE] ;
-#endif
-	return new_speed;
-}
 
 static unsigned int cpu_user_cap;
 
@@ -495,11 +405,13 @@ int tegra_edp_update_thermal_zone(int temperature)
 	int nlimits = cpu_edp_limits_size;
 	int index;
 
-#ifdef ASUS_OVERCLOCK
-	if(temperature >= 75 && temperature < 85) {
+#ifdef TEGRA3_OVERCLOCK
+	if(temperature >= TEGRA3_DYNAMIC_EDP_THRES_TEMP) {
 		edp_enable = 1;
+		pr_info("%s: Dynamic EDP enabled, temp: %u\n", __func__, temperature);
 	} else {
 		edp_enable = 0;
+		pr_info("%s: Dynamic EDP disabled, temp: %u\n", __func__, temperature);
 	}
 #endif
 
@@ -604,31 +516,37 @@ static int tegra_cpu_edp_notify(
 	case CPU_UP_PREPARE:
 		mutex_lock(&tegra_cpu_lock);
 		cpu_set(cpu, edp_cpumask);
-		tegra_cpu_dvfs_alter(edp_thermal_index, &edp_cpumask, true);
 		edp_update_limit();
 
 		cpu_speed = tegra_getspeed(0);
+		
+#ifdef TEGRA3_OVERCLOCK
+		if(edp_enable) {
+			new_speed = edp_governor_speed(new_speed);
+		} else {
+			new_speed = cpu_speed;
+		}
+#else
 		new_speed = edp_governor_speed(cpu_speed);
+#endif
 		if (new_speed < cpu_speed) {
 			ret = tegra_cpu_set_speed_cap(NULL);
 			if (ret) {
 				cpu_clear(cpu, edp_cpumask);
 				edp_update_limit();
 			}
+			if (new_speed > 1000000) 
+				printk(KERN_DEBUG "tegra CPU:%sforce EDP limit %u kHz"
+						"\n", ret ? " failed to " : " ", new_speed);
 
-			pr_debug(KERN_DEBUG "tegra CPU:%sforce EDP limit %u kHz"
-				"\n", ret ? " failed to " : " ", new_speed);
 		}
-		tegra_cpu_dvfs_alter(edp_thermal_index, &edp_cpumask, false);
 		mutex_unlock(&tegra_cpu_lock);
 		break;
 	case CPU_DEAD:
 		mutex_lock(&tegra_cpu_lock);
 		cpu_clear(cpu, edp_cpumask);
-		tegra_cpu_dvfs_alter(edp_thermal_index, &edp_cpumask, true);
 		edp_update_limit();
 		tegra_cpu_set_speed_cap(NULL);
-		tegra_cpu_dvfs_alter(edp_thermal_index, &edp_cpumask, false);
 		mutex_unlock(&tegra_cpu_lock);
 		break;
 	}
@@ -706,31 +624,6 @@ module_param_cb(pwr_cap_limit_3, &pwr_cap_ops, &pwr_cap_limits[2], 0644);
 module_param_cb(pwr_cap_limit_4, &pwr_cap_ops, &pwr_cap_limits[3], 0644);
 
 #ifdef CONFIG_DEBUG_FS
-static int pwr_mode_table_debugfs_show(struct seq_file *s, void *data)
-{
-	int i;
-
-	seq_printf(s, "-- CPU power mode table --\n");
-	seq_printf(s, "OC=%u \n Power Saving=%u \n Balanced=%u \n Normal=%u \n \n",
-		power_mode_table[2],
-		power_mode_table[1],
-		power_mode_table[0],
-		power_mode_table[3]);
-	return 0;
-}
-
-
-static int pwr_mode_table_debugfs_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, pwr_mode_table_debugfs_show, inode->i_private);
-}
-
-static const struct file_operations pwr_mode_table_debugfs_fops = {
-	.open		= pwr_mode_table_debugfs_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
 
 static int system_edp_alarm_get(void *data, u64 *val)
 {
@@ -777,9 +670,6 @@ static int __init tegra_cpu_debug_init(void)
 		return -ENOMEM;
 
 	if (tegra_edp_debug_init(cpu_tegra_debugfs_root))
-		goto err_out;
-        if (!debugfs_create_file("pwr_mode_table", 0644, cpu_tegra_debugfs_root,
-		 NULL, &pwr_mode_table_debugfs_fops))
 		goto err_out;
 
 	return 0;
@@ -913,8 +803,8 @@ unsigned long tegra_cpu_highest_speed(void) {
 	int i;
 
 	for_each_online_cpu(i) {
-		//if (force_policy_max)
-		//	policy_max = min(policy_max, policy_max_speed[i]);
+		if (force_policy_max)
+			policy_max = min(policy_max, policy_max_speed[i]);
 		rate = max(rate, target_cpu_speed[i]);
 	}
 	rate = min(rate, policy_max);
@@ -928,22 +818,18 @@ int tegra_cpu_set_speed_cap(unsigned int *speed_cap)
 
 	if (is_suspended)
 		return -EBUSY;
-	new_speed = ASUS_governor_speed(new_speed);
+
 	new_speed = tegra_throttle_governor_speed(new_speed);
-#ifdef ASUS_OVERCLOCK
-	if(system_mode == SYSTEM_OVERCLOCK_MODE) {
-		if(edp_enable) {
-			pr_info("%s : EDP enable\n", __func__);
-			new_speed = edp_governor_speed(new_speed);
-		} 
-	} else {
+
+#ifdef TEGRA3_OVERCLOCK
+	if(edp_enable) {
 		new_speed = edp_governor_speed(new_speed);
 	}
 #else
 	new_speed = edp_governor_speed(new_speed);
-#endif
+#endif	
 
-	//new_speed = user_cap_speed(new_speed);
+	new_speed = user_cap_speed(new_speed);
 	if (speed_cap)
 		*speed_cap = new_speed;
 
@@ -962,17 +848,15 @@ int tegra_suspended_target(unsigned int target_freq)
 
 	/* apply only "hard" caps */
 	new_speed = tegra_throttle_governor_speed(new_speed);
-#ifdef ASUS_OVERCLOCK
-	if(system_mode == SYSTEM_OVERCLOCK_MODE){
-		if(edp_enable){
-			pr_info("%s : EDP enable\n", __func__);
-			new_speed = edp_governor_speed(new_speed);
-		}
-	}else
+#ifdef TEGRA3_OVERCLOCK
+	if(edp_enable) {
+		pr_info("%s : Dynamic EDP is enabled\n", __func__);
 		new_speed = edp_governor_speed(new_speed);
+	}
 #else
 	new_speed = edp_governor_speed(new_speed);
 #endif
+
 	return tegra_update_cpu_speed(new_speed);
 }
 
@@ -984,7 +868,6 @@ static int tegra_target(struct cpufreq_policy *policy,
 	unsigned int freq;
 	unsigned int new_speed;
 	int ret = 0;
-	int cpu = 0;
 
 	mutex_lock(&tegra_cpu_lock);
 
@@ -993,21 +876,10 @@ static int tegra_target(struct cpufreq_policy *policy,
 	if (ret)
 		goto _out;
 
-	if( (ret >= 0) && (idx >= 0) && (idx < freq_table_size) )
 	freq = freq_table[idx].frequency;
-	else{
-		printk("[warning] tegra_target ret=%d idx=%d cpu=%u\n",ret, idx,policy->cpu);
-		goto _out;
-	}
 
-	cpu=policy->cpu;
-	if( cpu >= 0 && cpu < nr_cpu_ids){
-		target_cpu_speed[cpu] = freq;
+	target_cpu_speed[policy->cpu] = freq;
 	ret = tegra_cpu_set_speed_cap(&new_speed);
-	}else
-		printk("[warning] tegra_target cpu=%u\n",policy->cpu);
-
-
 _out:
 	mutex_unlock(&tegra_cpu_lock);
 
@@ -1042,14 +914,6 @@ static int tegra_pm_notify(struct notifier_block *nb, unsigned long event,
 static struct notifier_block tegra_cpu_pm_notifier = {
 	.notifier_call = tegra_pm_notify,
 };
-
-void rebuild_max_freq_table(max_rate)
-{
-	power_mode_table[SYSTEM_NORMAL_MODE] = 1400000;
-	power_mode_table[SYSTEM_BALANCE_MODE] = 1300000;
-	power_mode_table[SYSTEM_PWRSAVE_MODE] = SYSTEM_PWRSAVE_MODE_MAX_FREQ;
-	power_mode_table[SYSTEM_OVERCLOCK_MODE]=1700000;
-}
 
 static int tegra_cpu_init(struct cpufreq_policy *policy)
 {
@@ -1105,6 +969,8 @@ static int tegra_cpu_init(struct cpufreq_policy *policy)
 	cpumask_copy(policy->related_cpus, cpu_possible_mask);
 
 	if (policy->cpu == 0) {
+		/* set to 1.3GHz stock freq on init */
+		policy->max = 1400000;
 		register_pm_notifier(&tegra_cpu_pm_notifier);
 	}
 
@@ -1175,15 +1041,8 @@ static int __init tegra_cpufreq_init(void)
 	ret = tegra_auto_hotplug_init(&tegra_cpu_lock);
 	if (ret)
 		return ret;
+
 	freq_table = table_data->freq_table;
-
-	for (i= 0; freq_table[i].frequency !=
-				CPUFREQ_TABLE_END; i++)
-				freq_table_size++;
-
-	rebuild_max_freq_table( freq_table[freq_table_size-1].frequency);
-	printk("tegra_cpufreq_init freq_table_size=%u max rate=%u\n", freq_table_size, freq_table[freq_table_size-1].frequency);
-	
 	tegra_cpu_edp_init(false);
 
 	ret = cpufreq_register_notifier(
