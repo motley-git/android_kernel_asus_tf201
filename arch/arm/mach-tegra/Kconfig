@@ -316,6 +316,16 @@ config VOLTAGE_CONTROL
 	help
 	User custom voltage control interface
 
+config GPU_OVERCLOCK
+	bool "Enable GPU overclock for Tegra3"
+	depends on TEGRA_SILICON_PLATFORM
+	default y
+	help
+	Choose y to overclock the GPU. 
+	If Off, clock speed is 600MHz.
+	If On, default GPU clock speed can be adjusted at runtime.
+
+	  
 config TEGRA_CPU_DVFS
 	bool "Enable voltage scaling on Tegra CPU"
 	depends on TEGRA_SILICON_PLATFORM
