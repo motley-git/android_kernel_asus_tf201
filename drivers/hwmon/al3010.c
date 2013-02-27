@@ -440,7 +440,7 @@ static ssize_t al3010_show_revise_lux(struct device *dev,
 			}
 		}else{
 			if( revise_lux > 30 ){
-				printk("light sensor debug : al3010 stop filter noise lux > 30 , lux = %d\n",revise_lux);
+				pr_debug("light sensor debug : al3010 stop filter noise lux > 30 , lux = %d\n",revise_lux);
 			}
 			// reset first time check
 			catch_first_poll_noise_time = false;
