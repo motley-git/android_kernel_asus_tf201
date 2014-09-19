@@ -239,12 +239,19 @@ static const struct attribute_group asusdec_smbus_group = {
 	.attrs = asusdec_smbus_attributes,
 };
 
-static int asusdec_kp_sci_table[]={0, KEY_SLEEP, KEY_WLAN, KEY_BLUETOOTH, 
-		ASUSDEC_KEY_TOUCHPAD, KEY_BRIGHTNESSDOWN, KEY_BRIGHTNESSUP, ASUSDEC_KEY_AUTOBRIGHT, 
-		KEY_CAMERA, -9, -10, -11, 
-		-12, -13, -14, -15, 
-		KEY_WWW, ASUSDEC_KEY_SETTING, KEY_PREVIOUSSONG, KEY_PLAYPAUSE, 
-		KEY_NEXTSONG, KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP};
+static int asusdec_kp_sci_table[]={0, KEY_SLEEP, KEY_WLAN, KEY_BLUETOOTH,
+        ASUSDEC_KEY_TOUCHPAD_TOGGLE, KEY_BRIGHTNESSDOWN, KEY_BRIGHTNESSUP, KEY_BRIGHTNESS_ZERO /*AUTO*/,
+        KEY_CAMERA, -9, -10, -11,
+        -12, -13, -14, -15,
+        KEY_WWW, KEY_SETUP /*SETTINGS*/, KEY_PREVIOUSSONG, KEY_PLAYPAUSE,
+        KEY_NEXTSONG, KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP};
+
+static int asusdec_kp_sci_fn_table[]={0, -1, KEY_F1, KEY_F2,
+        KEY_F3, KEY_F4, KEY_F5, KEY_F6,
+        KEY_F7, -9, -10, -11,
+        -12, -13, -14, -15,
+        KEY_F8, KEY_F9, KEY_F10, KEY_F11,
+        KEY_F12, -21, -22, -23};
 
 /*
  * functions definition
@@ -674,6 +681,8 @@ static int asusdec_chip_init(struct i2c_client *client)
 
 	ASUSDEC_NOTICE("touchpad and keyboard init\n");
 	ec_chip->d_index = 0;
+
+	ec_chip->kp_fn_mode = 0;
 
 	asusdec_keypad_enable(client);
 	asusdec_clear_i2c_buffer(client);
@@ -1377,8 +1386,12 @@ static void asusdec_kp_kbc(void){
 }
 static void asusdec_kp_sci(void){
 	int ec_signal = ec_chip->i2c_data[2];
-	
-	ec_chip->keypad_data.input_keycode = asusdec_kp_sci_table[ec_signal];
+
+	if (ec_chip->kp_fn_mode) {
+        ec_chip->keypad_data.input_keycode = asusdec_kp_sci_fn_table[ec_signal];
+        } else {
+        ec_chip->keypad_data.input_keycode = asusdec_kp_sci_table[ec_signal];
+}
 	if(ec_chip->keypad_data.input_keycode > 0){
 		ASUSDEC_INFO("input_keycode = 0x%x\n", ec_chip->keypad_data.input_keycode);
 		
@@ -1441,6 +1454,15 @@ static void asusdec_kp_key(void){
 		ASUSDEC_INFO("Unknown scancode = 0x%x\n", scancode);
 	}
 
+        // Now we are in kp_fn_mode?. Then kp_sci will be mapped to Fn keys
+        bool metastate =
+                (
+                scancode == ASUSDEC_KEYPAD_LEFTCTRL || scancode == ASUSDEC_KEYPAD_RIGHTCTRL ||
+                scancode == ASUSDEC_KEYPAD_KEY_LEFTSHIFT || scancode == ASUSDEC_KEYPAD_KEY_RIGHTSHIFT ||
+                scancode == ASUSDEC_KEYPAD_LEFTALT || scancode == ASUSDEC_KEYPAD_RIGHTALT
+                );
+            ec_chip->kp_fn_mode = (ec_chip->keypad_data.value == 1 && metastate) ? 1 : 0;
+        ASUSDEC_INFO("kp_fn_mode = %d\n", ec_chip->kp_fn_mode);
 }
 
 static void asusdec_keypad_processing(void){
@@ -1581,6 +1603,10 @@ static void asusdec_dock_init_work_function(struct work_struct *dat)
 				memset(ec_chip->mcu_fw_version, 0, 5);
 			}
 			ec_chip->dock_type = DOCK_UNKNOWN;
+
+			// sync ec_wakeup status and kp_fn_mode
+			ec_chip->ec_wakeup = 0;
+			ec_chip->kp_fn_mode = 0;
 
 			// sync ec_wakeup status
 			ec_chip->ec_wakeup = 0;
@@ -1887,6 +1913,7 @@ static int __devinit asusdec_probe(struct i2c_client *client,
 	ec_chip->indev = NULL;
 	ec_chip->lid_indev = NULL;
 	ec_chip->private->abs_dev = NULL;
+	ec_chip->kp_fn_mode = 0;
 	asusdec_dockram_init(client);
 	
 	cdev_add(asusdec_cdev,asusdec_dev,1) ;
